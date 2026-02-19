@@ -24,10 +24,7 @@ const STATUS_TIMELINE = [
 
 export const CartProvider = ({ children }) => {
     const { user } = useAuth();
-    const [cartItems, setCartItems] = useState(() => {
-        const savedCart = localStorage.getItem('cart');
-        return savedCart ? JSON.parse(savedCart) : [];
-    });
+    const [cartItems, setCartItems] = useState([]);
     const [orders, setOrders] = useState([]);
     const [favorites, setFavorites] = useState(() => {
         const savedFavs = localStorage.getItem('favorites');
@@ -37,13 +34,7 @@ export const CartProvider = ({ children }) => {
     const [appliedOffer, setAppliedOffer] = useState(null);
     const [loadingCart] = useState(false);
 
-    // Initial load for Guest Cart
-    useEffect(() => {
-        const guestCart = localStorage.getItem('foodkart_guest_cart');
-        if (guestCart && !user) {
-            try { setCartItems(JSON.parse(guestCart)); } catch (e) { console.error(e); }
-        }
-    }, [user]);
+
 
     // Sync CartItems with Firestore
     useEffect(() => {
@@ -143,13 +134,14 @@ export const CartProvider = ({ children }) => {
         });
     };
 
-    // Persist CartItems
-    useEffect(() => { localStorage.setItem('cart', JSON.stringify(cartItems)); }, [cartItems]);
+    // Persist Favorites only
     useEffect(() => { localStorage.setItem('favorites', JSON.stringify(favorites)); }, [favorites]);
+
+    // Clear stale localStorage cart keys on mount
     useEffect(() => {
-        if (!user) localStorage.setItem('foodkart_guest_cart', JSON.stringify(cartItems));
-        else localStorage.removeItem('foodkart_guest_cart');
-    }, [cartItems, user]);
+        localStorage.removeItem('cart');
+        localStorage.removeItem('foodkart_guest_cart');
+    }, []);
 
     const updateCartData = async (newItems) => {
         if (!user) { setCartItems(newItems); return; }
