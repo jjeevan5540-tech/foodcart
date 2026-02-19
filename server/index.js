@@ -1,5 +1,5 @@
 import express from 'express';
-import nodemailer from 'nodemailer';
+import sgMail from '@sendgrid/mail';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import https from 'https';
@@ -31,46 +31,26 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET || 'placeholder_secret',
 });
 
-// ─── Nodemailer Transporter ───────────────────────────────────────────────────
-const createTransporter = () => {
-  const user = process.env.SMTP_USER?.trim();
-  const pass = process.env.SMTP_PASS?.trim();
+// ─── SendGrid Setup ───────────────────────────────────────────────────────────
+if (!process.env.SENDGRID_API_KEY) {
+  console.error('❌ SENDGRID_API_KEY missing in .env');
+} else {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+  console.log('✅ SendGrid configured');
+}
 
-  if (!user || !pass) {
-    console.error('❌ SMTP Configuration Missing: Check your .env for SMTP_USER and SMTP_PASS');
-  }
+const FROM_EMAIL = process.env.FROM_EMAIL || process.env.SENDGRID_FROM_EMAIL;
 
-  return nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false, // true for 465, false for other ports
-    auth: { user, pass },
-    tls: {
-      rejectUnauthorized: false // Helps with some self-signed certificate issues or proxy blocks
-    }
-  });
-};
-
-// ─── Helper: Send Email ───────────────────────────────────────────────────────
+// ─── Helper: Send Email via SendGrid ─────────────────────────────────────────
 const sendEmail = async ({ to, subject, html, text }) => {
-  const transporter = createTransporter();
-  console.log(`📡 Attempting to send email to ${to}...`);
+  console.log(`📡 Sending email via SendGrid to ${to}...`);
   try {
-    const info = await transporter.sendMail({
-      from: process.env.SMTP_USER,
-      to,
-      subject,
-      text,
-      html,
-    });
-    console.log(`✅ Email sent to ${to}: ${info.messageId}`);
-    return info;
+    const msg = { to, from: FROM_EMAIL, subject, text: text || '', html: html || '' };
+    const [response] = await sgMail.send(msg);
+    console.log(`✅ Email sent to ${to} — Status: ${response.statusCode}`);
+    return response;
   } catch (error) {
-    console.error(`❌ SMTP Error sending to ${to}:`, error);
-    // Log more details for 535 errors
-    if (error.responseCode === 535) {
-      console.error('⚠️  Authentication Failed (535). Please verify SMTP_USER and SMTP_PASS (App Password) in .env');
-    }
+    console.error(`❌ SendGrid Error sending to ${to}:`, error?.response?.body || error.message);
     throw error;
   }
 };
@@ -413,21 +393,21 @@ app.post('/api/report-issue', async (req, res) => {
 
 // ─── Route: Test Email Connection ──────────────────────────────────────────
 app.get('/api/test-email', async (req, res) => {
-  const testEmail = req.query.email || process.env.SMTP_USER;
+  const testEmail = req.query.email || FROM_EMAIL;
   try {
-    console.log(`🧪 Testing SMTP connection for ${testEmail}...`);
-    const info = await sendEmail({
+    console.log(`🧪 Testing SendGrid connection for ${testEmail}...`);
+    await sendEmail({
       to: testEmail,
-      subject: '🧪 FoodKart: SMTP Test Connection Successful',
-      html: `<h1>SMTP is working! ✅</h1><p>If you see this, your Gmail App Password is configured correctly for <strong>FoodKart</strong>.</p>`
+      subject: '🧪 FoodKart: SendGrid Test Successful',
+      html: `<h1>SendGrid is working! ✅</h1><p>Your SendGrid API key is configured correctly for <strong>FoodKart</strong>.</p>`
     });
-    res.status(200).json({ success: true, message: 'Test email sent successfully!', messageId: info.messageId });
+    res.status(200).json({ success: true, message: 'Test email sent via SendGrid successfully!' });
   } catch (error) {
-    console.error('❌ SMTP Test Failed:', error);
+    console.error('❌ SendGrid Test Failed:', error?.response?.body || error.message);
     res.status(500).json({
       success: false,
-      error: 'Authentication failed. Please ensure you are using a Gmail App Password, not your regular password.',
-      details: error.message
+      error: 'SendGrid failed. Check your SENDGRID_API_KEY and FROM_EMAIL in .env',
+      details: error?.response?.body || error.message
     });
   }
 });
@@ -439,7 +419,7 @@ app.get('/api/health', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`\n🚀 FoodKart Notification Server running at http://localhost:${PORT}`);
-  console.log(`📧 SMTP: ${process.env.SMTP_USER}`);
+  console.log(`📧 SendGrid From: ${FROM_EMAIL}`);
   console.log(`🍽️  Restaurant: ${process.env.RESTAURANT_EMAIL} | ${process.env.RESTAURANT_PHONE}`);
   console.log(`📱 WhatsApp: ${process.env.CALLMEBOT_API_KEY !== 'placeholder_key' ? 'Configured ✅' : 'Not configured (add CALLMEBOT_API_KEY to .env)'}\n`);
 });
