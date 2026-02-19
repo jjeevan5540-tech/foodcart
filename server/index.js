@@ -1,5 +1,4 @@
 import express from 'express';
-import sgMail from '@sendgrid/mail';
 import { Resend } from 'resend';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -15,7 +14,25 @@ const __dirname = dirname(__filename);
 dotenv.config({ path: join(__dirname, '.env') });
 
 const app = express();
-app.use(cors());
+
+// ─── CORS: allow local dev + Railway frontend URL ──────────────────────────
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:3000',
+  process.env.FRONTEND_URL,          // set this in Railway → e.g. https://foodkart.up.railway.app
+].filter(Boolean);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, Postman)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    console.warn(`⚠️  CORS blocked origin: ${origin}`);
+    callback(new Error(`CORS: origin ${origin} not allowed`));
+  },
+  credentials: true,
+}));
 app.use(express.json());
 
 // Request Logger
@@ -32,24 +49,27 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET || 'placeholder_secret',
 });
 
-// ─── Email Provider Setup (Auto-selects Resend or SendGrid) ──────────────────
+// ─── Email Provider Setup (Auto-selects Resend or SendGrid, with dev fallback) ─
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
 const FROM_EMAIL = process.env.FROM_EMAIL || 'onboarding@resend.dev';
 
+// Detect if keys are still placeholder values
+const isResendReal = RESEND_API_KEY && !RESEND_API_KEY.includes('placeholder') && !RESEND_API_KEY.includes('YOUR_');
+const isSendGridReal = SENDGRID_API_KEY && !SENDGRID_API_KEY.includes('placeholder') && !SENDGRID_API_KEY.includes('YOUR_');
+
 let resendClient = null;
 
-if (RESEND_API_KEY) {
+if (isResendReal) {
   resendClient = new Resend(RESEND_API_KEY);
-  console.log('✅ Email provider: Resend');
-} else if (SENDGRID_API_KEY) {
-  sgMail.setApiKey(SENDGRID_API_KEY);
-  console.log('✅ Email provider: SendGrid');
+  console.log('✅ Email provider: Resend (key configured)');
 } else {
-  console.warn('⚠️  No email provider configured. Set RESEND_API_KEY or SENDGRID_API_KEY in .env');
+  console.warn('⚠️  No real Resend API key found — running in DEV mode (emails logged to console).');
+  console.warn('   → Add RESEND_API_KEY to server/.env to send real emails');
+  console.warn('   → Get a FREE key at: https://resend.com/signup');
 }
 
-// ─── Helper: Send Email (Resend or SendGrid) ──────────────────────────────────
+// ─── Helper: Send Email (Resend → SendGrid → Dev-console fallback) ────────────
 const sendEmail = async ({ to, subject, html, text }) => {
   if (resendClient) {
     // ── Resend ──
@@ -63,19 +83,19 @@ const sendEmail = async ({ to, subject, html, text }) => {
     });
     if (error) {
       console.error(`❌ Resend Error:`, error);
-      throw new Error(error.message);
+      throw new Error(error.message || JSON.stringify(error));
     }
     console.log(`✅ Email sent via Resend to ${to} — ID: ${data.id}`);
     return data;
-  } else if (SENDGRID_API_KEY) {
-    // ── SendGrid ──
-    console.log(`📡 Sending email via SendGrid to ${to}...`);
-    const msg = { to, from: FROM_EMAIL, subject, text: text || '', html: html || '' };
-    const [response] = await sgMail.send(msg);
-    console.log(`✅ Email sent via SendGrid to ${to} — Status: ${response.statusCode}`);
-    return response;
   } else {
-    throw new Error('No email provider configured. Add RESEND_API_KEY or SENDGRID_API_KEY to .env');
+    // ── Dev console fallback (no real key) ──
+    console.log('\n📧 [DEV MODE] Email would have been sent:');
+    console.log(`   From   : ${FROM_EMAIL}`);
+    console.log(`   To     : ${to}`);
+    console.log(`   Subject: ${subject}`);
+    console.log('   (Configure RESEND_API_KEY in server/.env to send real emails)\n');
+    // Return a fake response so callers don't crash
+    return { id: 'dev-mode-' + Date.now(), dev: true };
   }
 };
 
@@ -151,16 +171,14 @@ app.post('/api/notify-order', async (req, res) => {
   const { orderData, userData } = req.body;
   if (!orderData || !userData) return res.status(400).json({ error: 'Missing order or user data' });
 
-  const itemsList = orderData.items.map(i =>
-    `<tr><td style="padding:8px 0; color:#333;">${i.name}</td><td style="padding:8px 0; color:#555; text-align:center;">x${i.quantity}</td><td style="padding:8px 0; color:#e23744; text-align:right; font-weight:bold;">₹${i.price * i.quantity}</td></tr>`
+  // orderData.total from CartContext already includes delivery+platform+taxes (it IS the grand total)
+  const grandTotal = orderData.total;
+
+  const itemsList = (orderData.items || []).map(i =>
+    `<tr><td style="padding:8px 0; color:#333;">${i.name}</td><td style="padding:8px 0; color:#555; text-align:center;">x${i.quantity}</td><td style="padding:8px 0; color:#e23744; text-align:right; font-weight:bold;">&#8377;${i.price * i.quantity}</td></tr>`
   ).join('');
 
-  const itemsText = orderData.items.map(i => `• ${i.name} x${i.quantity} = ₹${i.price * i.quantity}`).join('\n');
-
-  const deliveryFee = 40;
-  const platformFee = 20;
-  const taxes = Math.round(orderData.total * 0.05);
-  const grandTotal = orderData.total + deliveryFee + platformFee + taxes;
+  const itemsText = (orderData.items || []).map(i => `- ${i.name} x${i.quantity} = Rs.${i.price * i.quantity}`).join('\n');
 
   // ── Customer Email ──
   const customerHtml = `
@@ -170,7 +188,7 @@ app.post('/api/notify-order', async (req, res) => {
         <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0; font-size: 18px;">Order Confirmed! 🎉</p>
       </div>
       <div style="padding: 40px 32px;">
-        <h2 style="color: #1a1a1a; margin: 0 0 16px;">Hi ${userData.name || userData.email.split('@')[0]}! 👋</h2>
+        <h2 style="color: #1a1a1a; margin: 0 0 16px;">Hi ${userData.name || (userData.email || '').split('@')[0]}! 👋</h2>
         <div style="background: #fff5f5; border-radius: 12px; padding: 20px; border: 1px solid #fed7d7; margin-bottom: 24px; text-align: center;">
           <p style="color: #e23744; font-size: 20px; font-weight: 900; margin: 0;">Thank you for placing your order with FoodKart!</p>
           <p style="color: #666; font-size: 14px; margin-top: 8px;">We've received your order and our restaurant partner is starting to prepare it right away.</p>
@@ -188,11 +206,7 @@ app.post('/api/notify-order', async (req, res) => {
             <tbody>${itemsList}</tbody>
           </table>
           <div style="border-top: 1px dashed #ddd; margin-top: 16px; padding-top: 16px;">
-            <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span style="color:#666;">Subtotal</span><span>₹${orderData.total}</span></div>
-            <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span style="color:#666;">Delivery Fee</span><span>₹${deliveryFee}</span></div>
-            <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span style="color:#666;">Platform Fee</span><span>₹${platformFee}</span></div>
-            <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span style="color:#666;">GST & Charges</span><span>₹${taxes}</span></div>
-            <div style="display:flex; justify-content:space-between; margin-top:12px; padding-top:12px; border-top:2px solid #e23744;"><strong style="font-size:18px;">Grand Total</strong><strong style="font-size:18px; color:#e23744;">₹${grandTotal}</strong></div>
+            <div style="display:flex; justify-content:space-between; margin-top:12px; padding-top:12px; border-top:2px solid #e23744;"><strong style="font-size:18px;">Grand Total</strong><strong style="font-size:18px; color:#e23744;">&#8377;${grandTotal}</strong></div>
           </div>
         </div>
 
@@ -213,7 +227,7 @@ app.post('/api/notify-order', async (req, res) => {
     </div>`;
 
   // ── Restaurant Owner Email ──
-  const restaurantName = orderData.items[0]?.restaurantName || 'FoodKart Restaurant';
+  const restaurantName = (orderData.items || [])[0]?.restaurantName || 'FoodKart Restaurant';
   const ownerHtml = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08);">
       <div style="background: linear-gradient(135deg, #1a1a2e, #16213e); padding: 40px 32px; text-align: center;">
@@ -250,35 +264,27 @@ app.post('/api/notify-order', async (req, res) => {
       </div>
     </div>`;
 
-  try {
-    const promises = [];
+  const results = []; const errors = [];
 
-    // Send to customer
-    if (userData.email) {
-      promises.push(sendEmail({ to: userData.email, subject: `🎉 Order Confirmed! #${orderData.id?.slice(-8).toUpperCase()} - FoodKart`, html: customerHtml }));
-    }
-
-    // Send to restaurant owner
-    promises.push(sendEmail({ to: process.env.RESTAURANT_EMAIL || 'jjeevan5540@gmail.com', subject: `🍽️ New Order #${orderData.id?.slice(-8).toUpperCase()} from ${userData.name || 'Customer'}`, html: ownerHtml }));
-
-    // WhatsApp to customer (if phone provided)
-    if (userData.phone && process.env.CALLMEBOT_API_KEY && process.env.CALLMEBOT_API_KEY !== 'placeholder_key') {
-      const customerMsg = `🍔 FoodKart Order Confirmed!\nOrder #${orderData.id?.slice(-8).toUpperCase()}\n${itemsText}\nTotal: ₹${grandTotal}\nDelivery: ${orderData.address}\nETA: 35-45 mins`;
-      promises.push(sendWhatsApp(userData.phone, customerMsg).catch(e => console.warn('WhatsApp to customer failed:', e.message)));
-    }
-
-    // WhatsApp to restaurant owner
-    if (process.env.CALLMEBOT_API_KEY && process.env.CALLMEBOT_API_KEY !== 'placeholder_key') {
-      const ownerMsg = `🆕 New Order #${orderData.id?.slice(-8).toUpperCase()}\nRestaurant: ${restaurantName}\nCustomer: ${userData.name || 'N/A'} (${userData.phone || 'N/A'})\n${itemsText}\nTotal: ₹${grandTotal}\nAddress: ${orderData.address}`;
-      promises.push(sendWhatsApp(process.env.RESTAURANT_PHONE || '8978925540', ownerMsg).catch(e => console.warn('WhatsApp to owner failed:', e.message)));
-    }
-
-    await Promise.all(promises);
-    res.status(200).json({ success: true });
-  } catch (error) {
-    console.error('Order notification error:', error);
-    res.status(500).json({ error: 'Failed to send order notifications', details: error.message });
+  // Each email is individually caught so one failure never blocks the other
+  if (userData.email) {
+    await sendEmail({ to: userData.email, subject: `🎉 Order Confirmed! #${orderData.id?.slice(-8).toUpperCase()} - FoodKart`, html: customerHtml })
+      .then(() => results.push('customer_email'))
+      .catch(e => { console.warn('⚠️ Customer email failed:', e.message); errors.push(e.message); });
   }
+
+  const ownerEmail = process.env.RESTAURANT_EMAIL || 'jjeevan5540@gmail.com';
+  await sendEmail({ to: ownerEmail, subject: `🍽️ New Order #${orderData.id?.slice(-8).toUpperCase()} from ${userData.name || 'Customer'}`, html: ownerHtml })
+    .then(() => results.push('owner_email'))
+    .catch(e => { console.warn('⚠️ Owner email failed:', e.message); errors.push(e.message); });
+
+  if (userData.phone && process.env.CALLMEBOT_API_KEY && process.env.CALLMEBOT_API_KEY !== 'placeholder_key') {
+    const customerMsg = `🍔 FoodKart Order Confirmed!\nOrder #${orderData.id?.slice(-8).toUpperCase()}\n${itemsText}\nTotal: Rs.${grandTotal}\nDelivery: ${orderData.address}\nETA: 35-45 mins`;
+    sendWhatsApp(userData.phone, customerMsg).catch(e => console.warn('WhatsApp to customer failed:', e.message));
+  }
+
+  console.log('📧 Order notifications done. Sent:', results, errors.length ? '| Errors:' + errors : '');
+  res.status(200).json({ success: true, results, errors });
 });
 
 // ─── Route: Payment Confirmation ─────────────────────────────────────────────
@@ -286,10 +292,8 @@ app.post('/api/notify-payment', async (req, res) => {
   const { orderData, userData, paymentMethod } = req.body;
   if (!orderData || !userData) return res.status(400).json({ error: 'Missing data' });
 
-  const deliveryFee = 40;
-  const platformFee = 20;
-  const taxes = Math.round(orderData.total * 0.05);
-  const grandTotal = orderData.total + deliveryFee + platformFee + taxes;
+  // orderData.total IS already the grand total (CartContext includes all fees)
+  const grandTotal = orderData.total;
 
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08);">
@@ -299,7 +303,7 @@ app.post('/api/notify-payment', async (req, res) => {
         <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0;">₹${grandTotal} paid via ${paymentMethod || 'Online Payment'}</p>
       </div>
       <div style="padding: 40px 32px; text-align: center;">
-        <h2 style="color: #1a1a1a; margin: 0 0 8px;">Thank you, ${userData.name || userData.email.split('@')[0]}!</h2>
+        <h2 style="color: #1a1a1a; margin: 0 0 8px;">Thank you, ${userData.name || (userData.email || '').split('@')[0]}!</h2>
         <p style="color: #555; margin: 0 0 24px;">Your payment of <strong style="color:#10b981;">₹${grandTotal}</strong> has been received successfully.</p>
         <div style="background: #f0fdf4; border-radius: 12px; padding: 20px; margin-bottom: 16px;">
           <p style="margin:0; color:#166534; font-size:14px;">🆔 Order ID: <strong>#${orderData.id?.slice(-8).toUpperCase()}</strong></p>
@@ -312,23 +316,18 @@ app.post('/api/notify-payment', async (req, res) => {
       </div>
     </div>`;
 
-  try {
-    const promises = [
-      sendEmail({ to: userData.email, subject: `✅ Payment Confirmed ₹${grandTotal} - FoodKart Order #${orderData.id?.slice(-8).toUpperCase()}`, html })
-    ];
-
-    // WhatsApp payment confirmation
-    if (userData.phone && process.env.CALLMEBOT_API_KEY && process.env.CALLMEBOT_API_KEY !== 'placeholder_key') {
-      const msg = `✅ FoodKart Payment Confirmed!\nAmount: ₹${grandTotal}\nMethod: ${paymentMethod || 'Online'}\nOrder #${orderData.id?.slice(-8).toUpperCase()}\nYour food is being prepared! 🍳`;
-      promises.push(sendWhatsApp(userData.phone, msg).catch(e => console.warn('WhatsApp payment notification failed:', e.message)));
-    }
-
-    await Promise.all(promises);
-    res.status(200).json({ success: true });
-  } catch (error) {
-    console.error('Payment notification error:', error);
-    res.status(500).json({ error: 'Failed to send payment notification', details: error.message });
+  let paymentEmailError = null;
+  if (userData.email) {
+    await sendEmail({ to: userData.email, subject: `✅ Payment Confirmed ₹${grandTotal} - FoodKart Order #${orderData.id?.slice(-8).toUpperCase()}`, html })
+      .catch(e => { paymentEmailError = e.message; console.warn('⚠️ Payment email failed:', e.message); });
   }
+
+  if (userData.phone && process.env.CALLMEBOT_API_KEY && process.env.CALLMEBOT_API_KEY !== 'placeholder_key') {
+    const msg = `✅ FoodKart Payment Confirmed!\nAmount: ₹${grandTotal}\nMethod: ${paymentMethod || 'Online'}\nOrder #${orderData.id?.slice(-8).toUpperCase()}\nYour food is being prepared! 🍳`;
+    sendWhatsApp(userData.phone, msg).catch(e => console.warn('WhatsApp payment notification failed:', e.message));
+  }
+
+  res.status(200).json({ success: true, emailError: paymentEmailError });
 });
 
 // ─── Route: WhatsApp Only ─────────────────────────────────────────────────────
@@ -418,19 +417,30 @@ app.post('/api/report-issue', async (req, res) => {
 // ─── Route: Test Email Connection ──────────────────────────────────────────
 app.get('/api/test-email', async (req, res) => {
   const testEmail = req.query.email || FROM_EMAIL;
+  const provider = resendClient ? 'Resend' : isSendGridReal ? 'SendGrid' : 'Dev-Console (no real key)';
   try {
-    console.log(`🧪 Testing SendGrid connection for ${testEmail}...`);
-    await sendEmail({
+    console.log(`🧪 Testing email connection [${provider}] for ${testEmail}...`);
+    const result = await sendEmail({
       to: testEmail,
-      subject: '🧪 FoodKart: SendGrid Test Successful',
-      html: `<h1>SendGrid is working! ✅</h1><p>Your SendGrid API key is configured correctly for <strong>FoodKart</strong>.</p>`
+      subject: '🧪 FoodKart: Email Test Successful',
+      html: `<h1>FoodKart Email is working! ✅</h1><p>Provider: <strong>${provider}</strong></p><p>FROM: ${FROM_EMAIL}</p>`
     });
-    res.status(200).json({ success: true, message: 'Test email sent via SendGrid successfully!' });
+    res.status(200).json({
+      success: true,
+      provider,
+      from: FROM_EMAIL,
+      to: testEmail,
+      devMode: !resendClient && !isSendGridReal,
+      message: resendClient || isSendGridReal
+        ? `Test email sent via ${provider} successfully!`
+        : 'DEV MODE: No real API key. Email logged to console. Add RESEND_API_KEY to server/.env to send real emails.'
+    });
   } catch (error) {
-    console.error('❌ SendGrid Test Failed:', error?.response?.body || error.message);
+    console.error('❌ Email Test Failed:', error?.response?.body || error.message);
     res.status(500).json({
       success: false,
-      error: 'SendGrid failed. Check your SENDGRID_API_KEY and FROM_EMAIL in .env',
+      provider,
+      error: `Email failed via ${provider}. Check your API key and FROM_EMAIL in server/.env`,
       details: error?.response?.body || error.message
     });
   }
@@ -442,8 +452,12 @@ app.get('/api/health', (req, res) => {
 });
 
 app.listen(PORT, () => {
+  const provider = resendClient ? 'Resend ✅' : isSendGridReal ? 'SendGrid ✅' : '⚠️  DEV MODE (no real key)';
   console.log(`\n🚀 FoodKart Notification Server running at http://localhost:${PORT}`);
-  console.log(`📧 SendGrid From: ${FROM_EMAIL}`);
-  console.log(`🍽️  Restaurant: ${process.env.RESTAURANT_EMAIL} | ${process.env.RESTAURANT_PHONE}`);
-  console.log(`📱 WhatsApp: ${process.env.CALLMEBOT_API_KEY !== 'placeholder_key' ? 'Configured ✅' : 'Not configured (add CALLMEBOT_API_KEY to .env)'}\n`);
+  console.log(`📧 Email Provider : ${provider}`);
+  console.log(`📧 From Address   : ${FROM_EMAIL}`);
+  console.log(`🍽️  Restaurant     : ${process.env.RESTAURANT_EMAIL} | ${process.env.RESTAURANT_PHONE}`);
+  console.log(`📱 WhatsApp       : ${process.env.CALLMEBOT_API_KEY !== 'placeholder_key' ? 'Configured ✅' : 'Not configured'}`);
+  console.log(`\n👉 Test health    : http://localhost:${PORT}/api/health`);
+  console.log(`👉 Test email     : http://localhost:${PORT}/api/test-email?email=your@email.com\n`);
 });
