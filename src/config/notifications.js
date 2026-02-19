@@ -1,5 +1,6 @@
 // Backend server base URL
-export const BACKEND_URL = 'http://localhost:5002';
+// In production, set VITE_BACKEND_URL in your Railway frontend environment variables
+export const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5002';
 
 export const NOTIFICATION_CONFIG = {
     ownerEmail: 'gowda2003pooja@gmail.com',
