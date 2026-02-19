@@ -13,6 +13,7 @@
         "dotenv": "^16.4.7",
         "express": "^4.21.2",
         "nodemailer": "^6.10.0",
-        "razorpay": "^2.9.6"
+        "razorpay": "^2.9.6",
+        "resend": "^6.9.2"
     }
 }

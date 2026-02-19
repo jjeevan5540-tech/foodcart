@@ -1,5 +1,6 @@
 import express from 'express';
 import sgMail from '@sendgrid/mail';
+import { Resend } from 'resend';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import https from 'https';
@@ -31,27 +32,50 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET || 'placeholder_secret',
 });
 
-// ─── SendGrid Setup ───────────────────────────────────────────────────────────
-if (!process.env.SENDGRID_API_KEY) {
-  console.error('❌ SENDGRID_API_KEY missing in .env');
+// ─── Email Provider Setup (Auto-selects Resend or SendGrid) ──────────────────
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
+const FROM_EMAIL = process.env.FROM_EMAIL || 'onboarding@resend.dev';
+
+let resendClient = null;
+
+if (RESEND_API_KEY) {
+  resendClient = new Resend(RESEND_API_KEY);
+  console.log('✅ Email provider: Resend');
+} else if (SENDGRID_API_KEY) {
+  sgMail.setApiKey(SENDGRID_API_KEY);
+  console.log('✅ Email provider: SendGrid');
 } else {
-  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-  console.log('✅ SendGrid configured');
+  console.warn('⚠️  No email provider configured. Set RESEND_API_KEY or SENDGRID_API_KEY in .env');
 }
 
-const FROM_EMAIL = process.env.FROM_EMAIL || process.env.SENDGRID_FROM_EMAIL;
-
-// ─── Helper: Send Email via SendGrid ─────────────────────────────────────────
+// ─── Helper: Send Email (Resend or SendGrid) ──────────────────────────────────
 const sendEmail = async ({ to, subject, html, text }) => {
-  console.log(`📡 Sending email via SendGrid to ${to}...`);
-  try {
+  if (resendClient) {
+    // ── Resend ──
+    console.log(`📡 Sending email via Resend to ${to}...`);
+    const { data, error } = await resendClient.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject,
+      html: html || '',
+      text: text || '',
+    });
+    if (error) {
+      console.error(`❌ Resend Error:`, error);
+      throw new Error(error.message);
+    }
+    console.log(`✅ Email sent via Resend to ${to} — ID: ${data.id}`);
+    return data;
+  } else if (SENDGRID_API_KEY) {
+    // ── SendGrid ──
+    console.log(`📡 Sending email via SendGrid to ${to}...`);
     const msg = { to, from: FROM_EMAIL, subject, text: text || '', html: html || '' };
     const [response] = await sgMail.send(msg);
-    console.log(`✅ Email sent to ${to} — Status: ${response.statusCode}`);
+    console.log(`✅ Email sent via SendGrid to ${to} — Status: ${response.statusCode}`);
     return response;
-  } catch (error) {
-    console.error(`❌ SendGrid Error sending to ${to}:`, error?.response?.body || error.message);
-    throw error;
+  } else {
+    throw new Error('No email provider configured. Add RESEND_API_KEY or SENDGRID_API_KEY to .env');
   }
 };
 
