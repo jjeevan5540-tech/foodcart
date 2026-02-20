@@ -478,7 +478,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // ─── SPA Catch-All Route (Must be last) ──────────────────────────────────────
-app.get('*', (req, res) => {
+app.get(/.*/, (req, res) => {
   res.sendFile(join(distPath, 'index.html'));
 });
 
