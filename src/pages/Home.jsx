@@ -206,11 +206,11 @@ const Home = () => {
                 </div>
             </section>
 
-            {/* New on FoodKart */}
+            {/* New on FoodCart */}
             {!isFiltering && (
                 <section className="container mx-auto px-6">
                     <div className="flex items-center justify-between mb-6">
-                        <h2 className="text-3xl font-black text-slate-900 dark:text-white">New on FoodKart</h2>
+                        <h2 className="text-3xl font-black text-slate-900 dark:text-white">New on FoodCart</h2>
                         <button onClick={resetFilters} className="text-blue-600 font-bold text-sm">See All</button>
                     </div>
                     <div className="flex gap-6 overflow-x-auto no-scrollbar pb-8 snap-x">

@@ -60,7 +60,7 @@ const SMTP_SECURE = process.env.SMTP_SECURE !== 'false'; // true for 465, false 
 const SMTP_USER = process.env.SMTP_USER || '';
 const SMTP_PASS = process.env.SMTP_PASS || '';
 const FROM_EMAIL = process.env.FROM_EMAIL || SMTP_USER;
-const FROM_NAME = process.env.FROM_NAME || 'FoodKart';
+const FROM_NAME = process.env.FROM_NAME || 'FoodCart';
 
 const isSmtpConfigured = SMTP_USER && SMTP_PASS
   && !SMTP_USER.includes('your_') && !SMTP_PASS.includes('your_');
@@ -163,24 +163,24 @@ app.post('/api/notify-login', async (req, res) => {
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08);">
       <div style="background: linear-gradient(135deg, #e23744, #ff6b35); padding: 40px 32px; text-align: center;">
-        <h1 style="color: white; margin: 0; font-size: 32px; font-weight: 900;">🍔 FoodKart</h1>
+        <h1 style="color: white; margin: 0; font-size: 32px; font-weight: 900;">🍔 FoodCart</h1>
         <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0; font-size: 16px;">Welcome Back!</p>
       </div>
       <div style="padding: 40px 32px;">
         <h2 style="color: #1a1a1a; font-size: 24px; margin: 0 0 16px;">Hi ${name || email.split('@')[0]} 👋</h2>
-        <p style="color: #555; font-size: 16px; line-height: 1.6;">You have successfully logged into your <strong>FoodKart</strong> account.</p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">You have successfully logged into your <strong>FoodCart</strong> account.</p>
         <div style="background: #fff8f0; border-left: 4px solid #e23744; padding: 16px 20px; border-radius: 8px; margin: 24px 0;">
           <p style="margin: 0; color: #333; font-size: 14px;">🔒 <strong>Security Notice:</strong> If this wasn't you, please contact us immediately at <a href="mailto:jjeevan5540@gmail.com" style="color: #e23744;">jjeevan5540@gmail.com</a> or call <a href="tel:8978925540" style="color: #e23744;">8978925540</a>.</p>
         </div>
         <p style="color: #555; font-size: 15px;">Explore restaurants, discover new dishes, and enjoy fast delivery! 🚀</p>
       </div>
       <div style="background: #f8f8f8; padding: 24px 32px; text-align: center; border-top: 1px solid #eee;">
-        <p style="color: #999; font-size: 13px; margin: 0;">© 2025 FoodKart | Customer Care: <a href="tel:8978925540" style="color: #e23744;">8978925540</a> | <a href="mailto:jjeevan5540@gmail.com" style="color: #e23744;">jjeevan5540@gmail.com</a></p>
+        <p style="color: #999; font-size: 13px; margin: 0;">© 2025 FoodCart | Customer Care: <a href="tel:8978925540" style="color: #e23744;">8978925540</a> | <a href="mailto:jjeevan5540@gmail.com" style="color: #e23744;">jjeevan5540@gmail.com</a></p>
       </div>
     </div>`;
 
   try {
-    await sendEmail({ to: email, subject: '✅ FoodKart Login Successful', html });
+    await sendEmail({ to: email, subject: '✅ FoodCart Login Successful', html });
     res.status(200).json({ success: true });
   } catch (error) {
     console.error('Login notification error:', error);
@@ -206,13 +206,13 @@ app.post('/api/notify-order', async (req, res) => {
   const customerHtml = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08);">
       <div style="background: linear-gradient(135deg, #e23744, #ff6b35); padding: 40px 32px; text-align: center;">
-        <h1 style="color: white; margin: 0; font-size: 32px; font-weight: 900;">🍔 FoodKart</h1>
+        <h1 style="color: white; margin: 0; font-size: 32px; font-weight: 900;">🍔 FoodCart</h1>
         <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0; font-size: 18px;">Order Confirmed! 🎉</p>
       </div>
       <div style="padding: 40px 32px;">
         <h2 style="color: #1a1a1a; margin: 0 0 16px;">Hi ${userData.name || (userData.email || '').split('@')[0]}! 👋</h2>
         <div style="background: #fff5f5; border-radius: 12px; padding: 20px; border: 1px solid #fed7d7; margin-bottom: 24px; text-align: center;">
-          <p style="color: #e23744; font-size: 20px; font-weight: 900; margin: 0;">Thank you for placing your order with FoodKart!</p>
+          <p style="color: #e23744; font-size: 20px; font-weight: 900; margin: 0;">Thank you for placing your order with FoodCart!</p>
           <p style="color: #666; font-size: 14px; margin-top: 8px;">We've received your order and our restaurant partner is starting to prepare it right away.</p>
         </div>
         <p style="color: #555; margin: 0 0 24px;">Your order <strong>#${orderData.id?.slice(-8).toUpperCase()}</strong> has been placed successfully.</p>
@@ -249,7 +249,7 @@ app.post('/api/notify-order', async (req, res) => {
     </div>`;
 
   // ── Restaurant Owner Email ──
-  const restaurantName = (orderData.items || [])[0]?.restaurantName || 'FoodKart Restaurant';
+  const restaurantName = (orderData.items || [])[0]?.restaurantName || 'FoodCart Restaurant';
   const ownerHtml = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08);">
       <div style="background: linear-gradient(135deg, #1a1a2e, #16213e); padding: 40px 32px; text-align: center;">
@@ -282,7 +282,7 @@ app.post('/api/notify-order', async (req, res) => {
         </div>
       </div>
       <div style="background:#f8f8f8; padding:24px 32px; text-align:center; border-top:1px solid #eee;">
-        <p style="color:#999; font-size:13px; margin:0;">FoodKart Restaurant Dashboard | Please prepare this order promptly.</p>
+        <p style="color:#999; font-size:13px; margin:0;">FoodCart Restaurant Dashboard | Please prepare this order promptly.</p>
       </div>
     </div>`;
 
@@ -290,7 +290,7 @@ app.post('/api/notify-order', async (req, res) => {
 
   // Each email is individually caught so one failure never blocks the other
   if (userData.email) {
-    await sendEmail({ to: userData.email, subject: `🎉 Order Confirmed! #${orderData.id?.slice(-8).toUpperCase()} - FoodKart`, html: customerHtml })
+    await sendEmail({ to: userData.email, subject: `🎉 Order Confirmed! #${orderData.id?.slice(-8).toUpperCase()} - FoodCart`, html: customerHtml })
       .then(() => results.push('customer_email'))
       .catch(e => { console.warn('⚠️ Customer email failed:', e.message); errors.push(e.message); });
   }
@@ -301,7 +301,7 @@ app.post('/api/notify-order', async (req, res) => {
     .catch(e => { console.warn('⚠️ Owner email failed:', e.message); errors.push(e.message); });
 
   if (userData.phone && process.env.CALLMEBOT_API_KEY && process.env.CALLMEBOT_API_KEY !== 'placeholder_key') {
-    const customerMsg = `🍔 FoodKart Order Confirmed!\nOrder #${orderData.id?.slice(-8).toUpperCase()}\n${itemsText}\nTotal: Rs.${grandTotal}\nDelivery: ${orderData.address}\nETA: 35-45 mins`;
+    const customerMsg = `🍔 FoodCart Order Confirmed!\nOrder #${orderData.id?.slice(-8).toUpperCase()}\n${itemsText}\nTotal: Rs.${grandTotal}\nDelivery: ${orderData.address}\nETA: 35-45 mins`;
     sendWhatsApp(userData.phone, customerMsg).catch(e => console.warn('WhatsApp to customer failed:', e.message));
   }
 
@@ -340,12 +340,12 @@ app.post('/api/notify-payment', async (req, res) => {
 
   let paymentEmailError = null;
   if (userData.email) {
-    await sendEmail({ to: userData.email, subject: `✅ Payment Confirmed ₹${grandTotal} - FoodKart Order #${orderData.id?.slice(-8).toUpperCase()}`, html })
+    await sendEmail({ to: userData.email, subject: `✅ Payment Confirmed ₹${grandTotal} - FoodCart Order #${orderData.id?.slice(-8).toUpperCase()}`, html })
       .catch(e => { paymentEmailError = e.message; console.warn('⚠️ Payment email failed:', e.message); });
   }
 
   if (userData.phone && process.env.CALLMEBOT_API_KEY && process.env.CALLMEBOT_API_KEY !== 'placeholder_key') {
-    const msg = `✅ FoodKart Payment Confirmed!\nAmount: ₹${grandTotal}\nMethod: ${paymentMethod || 'Online'}\nOrder #${orderData.id?.slice(-8).toUpperCase()}\nYour food is being prepared! 🍳`;
+    const msg = `✅ FoodCart Payment Confirmed!\nAmount: ₹${grandTotal}\nMethod: ${paymentMethod || 'Online'}\nOrder #${orderData.id?.slice(-8).toUpperCase()}\nYour food is being prepared! 🍳`;
     sendWhatsApp(userData.phone, msg).catch(e => console.warn('WhatsApp payment notification failed:', e.message));
   }
 
@@ -398,7 +398,7 @@ app.post('/api/report-issue', async (req, res) => {
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); border: 1px solid #fee2e2;">
       <div style="background: #e23744; padding: 32px; text-align: center;">
         <h1 style="color: white; margin: 0; font-size: 24px; font-weight: 900;">⚠️ New Issue Reported</h1>
-        <p style="color: rgba(255,255,255,0.8); margin: 8px 0 0;">FoodKart Customer Support</p>
+        <p style="color: rgba(255,255,255,0.8); margin: 8px 0 0;">FoodCart Customer Support</p>
       </div>
       <div style="padding: 32px;">
         <div style="background: #fef2f2; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
@@ -417,7 +417,7 @@ app.post('/api/report-issue', async (req, res) => {
         </div>
       </div>
       <div style="background: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #e2e8f0;">
-        <p style="color: #64748b; font-size: 12px; margin: 0;">This report was generated from the FoodKart Help Center.</p>
+        <p style="color: #64748b; font-size: 12px; margin: 0;">This report was generated from the FoodCart Help Center.</p>
       </div>
     </div>
   `;
@@ -449,8 +449,8 @@ app.get('/api/test-email', async (req, res) => {
 
     const info = await sendEmail({
       to: testEmail,
-      subject: '🧪 FoodKart: Email Test Successful',
-      html: `<h1>FoodKart Email is working! ✅</h1><p>Provider: <strong>SMTP</strong></p><p>FROM: ${FROM_EMAIL}</p>`
+      subject: '🧪 FoodCart: Email Test Successful',
+      html: `<h1>FoodCart Email is working! ✅</h1><p>Provider: <strong>SMTP</strong></p><p>FROM: ${FROM_EMAIL}</p>`
     });
 
     res.status(200).json({

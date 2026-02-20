@@ -120,7 +120,7 @@ const Checkout = () => {
                 key: process.env.RAZORPAY_KEY_ID,
                 amount: razorpayOrder.amount,
                 currency: razorpayOrder.currency,
-                name: "FoodKart",
+                name: "FoodCart",
                 description: "Order Payment",
                 order_id: razorpayOrder.id,
                 handler: async function (response) {
@@ -201,7 +201,7 @@ const Checkout = () => {
                         <CheckCircle2 className="w-14 h-14 text-green-600" />
                     </div>
                     <h2 className="text-3xl font-extrabold text-gray-900 mb-2">Order Confirmed! 🎉</h2>
-                    <p className="text-gray-500 mb-4">Thank you for ordering with FoodKart!</p>
+                    <p className="text-gray-500 mb-4">Thank you for ordering with FoodCart!</p>
                     <div className="bg-green-50 p-4 rounded-xl text-left border border-green-100 mb-4">
                         <p className="text-xs text-gray-400 uppercase font-bold mb-1">Order ID</p>
                         <p className="text-sm font-bold text-gray-800">#{orderId?.slice(-8).toUpperCase()}</p>

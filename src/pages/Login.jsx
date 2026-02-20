@@ -47,7 +47,7 @@ const Login = () => {
                             <ShoppingCart className="text-white w-8 h-8" />
                         </div>
                         <span className="text-4xl font-extrabold bg-gradient-to-r from-primary-600 to-rose-500 bg-clip-text text-transparent">
-                            FoodKart
+                            FoodCart
                         </span>
                     </div>
                     <p className="text-gray-500 mt-2">Welcome back! Please login to your account.</p>

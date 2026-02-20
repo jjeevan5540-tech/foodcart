@@ -238,7 +238,7 @@ const Help = () => {
                     <h3 className="font-black text-gray-900 mb-2">WhatsApp</h3>
                     <p className="text-sm text-gray-500 mb-4">Chat with us on WhatsApp</p>
                     <a
-                        href={`https://wa.me/91${CUSTOMER_CARE_PHONE}?text=Hi, I need help with my FoodKart order`}
+                        href={`https://wa.me/91${CUSTOMER_CARE_PHONE}?text=Hi, I need help with my FoodCart order`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-primary-600 font-black"

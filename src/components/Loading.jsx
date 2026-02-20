@@ -9,7 +9,7 @@ const Loading = ({ fullScreen = false }) => {
         <div className={containerStyle}>
             <div className="flex flex-col items-center">
                 <div className="w-12 h-12 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin"></div>
-                <p className="mt-4 text-gray-600 font-medium">Loading FoodKart...</p>
+                <p className="mt-4 text-gray-600 font-medium">Loading FoodCart...</p>
             </div>
         </div>
     );

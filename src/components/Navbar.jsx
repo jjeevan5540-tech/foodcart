@@ -24,7 +24,7 @@ const Navbar = () => {
                         <ShoppingCart className="text-white w-6 h-6" />
                     </div>
                     <span className="text-2xl font-black text-gradient tracking-tight">
-                        FoodKart
+                        FoodCart
                     </span>
                 </Link>
 
