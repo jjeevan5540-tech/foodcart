@@ -1,16 +1,8 @@
-import express from 'express';
-import nodemailer from 'nodemailer';
-import cors from 'cors';
-import dotenv from 'dotenv';
-import https from 'https';
-import Razorpay from 'razorpay';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+import { Resend } from 'resend';
 
 // Load .env from server/ directory regardless of where node is run from
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 dotenv.config({ path: join(__dirname, '.env') });
 
 const app = express();
@@ -53,13 +45,16 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET || 'placeholder_secret',
 });
 
-// ─── SMTP Email Setup (Nodemailer) ───────────────────────────────────────────
+// ─── Email Setup (Resend + Nodemailer Fallback) ──────────────────────────────
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const resend = (RESEND_API_KEY && !RESEND_API_KEY.includes('placeholder')) ? new Resend(RESEND_API_KEY) : null;
+
 const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
 const SMTP_PORT = parseInt(process.env.SMTP_PORT || '465');
-const SMTP_SECURE = process.env.SMTP_SECURE !== 'false'; // true for 465, false for 587
+const SMTP_SECURE = process.env.SMTP_SECURE !== 'false';
 const SMTP_USER = process.env.SMTP_USER || '';
 const SMTP_PASS = process.env.SMTP_PASS || '';
-const FROM_EMAIL = process.env.FROM_EMAIL || SMTP_USER;
+const FROM_EMAIL = process.env.FROM_EMAIL || SMTP_USER || 'onboarding@resend.dev';
 const FROM_NAME = process.env.FROM_NAME || 'FoodCart';
 
 const isSmtpConfigured = SMTP_USER && SMTP_PASS
@@ -67,7 +62,9 @@ const isSmtpConfigured = SMTP_USER && SMTP_PASS
 
 let transporter = null;
 
-if (isSmtpConfigured) {
+if (resend) {
+  console.log('✅ Email provider: Resend (API) — ready to send!');
+} else if (isSmtpConfigured) {
   transporter = nodemailer.createTransport({
     host: SMTP_HOST,
     port: SMTP_PORT,
@@ -76,48 +73,57 @@ if (isSmtpConfigured) {
     tls: { rejectUnauthorized: false },
   });
 
-  // Verify connection on startup
-  transporter.verify((err, ok) => {
+  transporter.verify((err) => {
     if (err) {
       console.error('❌ SMTP connection failed:', err.message);
-      console.error('   → Check SMTP_USER / SMTP_PASS in server/.env');
     } else {
       console.log(`✅ Email provider: SMTP (${SMTP_HOST}:${SMTP_PORT}) — ready to send!`);
     }
   });
 } else {
-  console.warn('⚠️  SMTP not configured — emails will be logged to console only.');
-  console.warn('   → Add SMTP_USER and SMTP_PASS to server/.env');
-  console.warn('   → For Gmail: use your Gmail address + an App Password');
-  console.warn('      Guide: https://myaccount.google.com/apppasswords');
+  console.warn('⚠️  No email provider configured (Resend or SMTP) — emails will be logged to console.');
 }
 
-// ─── Helper: Send Email via SMTP ─────────────────────────────────────────────
+// ─── Helper: Send Email ──────────────────────────────────────────────────────
 const sendEmail = async ({ to, subject, html, text }) => {
-  if (transporter) {
-    console.log(`📡 Sending email via SMTP to ${to}...`);
+  const from = `"${FROM_NAME}" <${FROM_EMAIL}>`;
+
+  if (resend) {
+    console.log(`📡 Sending email via Resend to ${to}...`);
     try {
-      const info = await transporter.sendMail({
-        from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+      // If using Resend without a verified domain, we MUST use onboarding@resend.dev
+      // We'll try to use the configured from address, but fallback if it's a common personal email
+      const isPersonalEmail = FROM_EMAIL.includes('gmail.com') || FROM_EMAIL.includes('yahoo.com');
+      const finalFrom = isPersonalEmail ? 'onboarding@resend.dev' : from;
+
+      const { data, error } = await resend.emails.send({
+        from: finalFrom,
         to,
         subject,
         html: html || '',
         text: text || '',
       });
-      console.log(`✅ Email sent to ${to} — MessageId: ${info.messageId}`);
+      if (error) throw error;
+      console.log(`✅ Email sent via Resend — ID: ${data.id}`);
+      return data;
+    } catch (error) {
+      console.error('❌ Resend Error:', error.message);
+      throw error;
+    }
+  } else if (transporter) {
+    console.log(`📡 Sending email via SMTP to ${to}...`);
+    try {
+      const info = await transporter.sendMail({ from, to, subject, html, text });
+      console.log(`✅ Email sent via SMTP — MessageId: ${info.messageId}`);
       return info;
     } catch (error) {
-      console.error(`❌ SMTP Error sending to ${to}:`, error);
-      throw error; // Re-throw to handle in route
+      console.error('❌ SMTP Error:', error.message);
+      throw error;
     }
   } else {
-    // Dev-console fallback
-    console.log('\n📧 [DEV MODE] Email would have been sent:');
-    console.log(`   From   : "${FROM_NAME}" <${FROM_EMAIL}>`);
-    console.log(`   To     : ${to}`);
-    console.log(`   Subject: ${subject}`);
-    console.log('   → Add SMTP_USER + SMTP_PASS to server/.env to send real emails\n');
-    return { messageId: 'dev-' + Date.now(), dev: true };
+    console.log('\n📧 [DEV MODE] Email log:');
+    console.log(`   To: ${to} | Subject: ${subject}\n`);
+    return { id: 'dev-' + Date.now(), dev: true };
   }
 };
 
@@ -423,7 +429,7 @@ app.post('/api/report-issue', async (req, res) => {
   `;
 
   try {
-    const adminEmail = process.env.RESTAURANT_EMAIL || 'gowda2003pooja@gmail.com';
+    const adminEmail = process.env.RESTAURANT_EMAIL || 'jjeevan5540@gmail.com';
     await sendEmail({
       to: adminEmail,
       subject: `⚠️ ISSUE REPORT [${reportData.issue}] - ${userData?.name || 'Customer'}`,

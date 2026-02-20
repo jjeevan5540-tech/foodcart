@@ -97,7 +97,7 @@ const Checkout = () => {
 
     const processRazorpayPayment = async (fullAddress, paymentLabel) => {
         // If placeholder key, use simulation for demo purposes
-        if (!process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID === 'rzp_test_placeholder') {
+        if (!import.meta.env.VITE_RAZORPAY_KEY_ID || import.meta.env.VITE_RAZORPAY_KEY_ID === 'rzp_test_placeholder') {
             return processMockPayment(fullAddress, paymentLabel);
         }
 
@@ -117,7 +117,7 @@ const Checkout = () => {
 
             // 2. Open Razorpay Modal
             const options = {
-                key: process.env.RAZORPAY_KEY_ID,
+                key: import.meta.env.VITE_RAZORPAY_KEY_ID,
                 amount: razorpayOrder.amount,
                 currency: razorpayOrder.currency,
                 name: "FoodCart",
