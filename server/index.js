@@ -482,9 +482,9 @@ app.get(/.*/, (req, res) => {
   res.sendFile(join(distPath, 'index.html'));
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   const provider = isSmtpConfigured ? `SMTP (${SMTP_HOST}:${SMTP_PORT}) ✅` : '⚠️  DEV MODE (SMTP not configured)';
-  console.log(`\n🚀 FoodKart Notification Server running at http://localhost:${PORT}`);
+  console.log(`\n🚀 FoodCart Notification Server running at http://0.0.0.0:${PORT}`);
   console.log(`📧 Email Provider : ${provider}`);
   console.log(`📧 From Address   : "${FROM_NAME}" <${FROM_EMAIL}>`);
   console.log(`🍽️  Restaurant     : ${process.env.RESTAURANT_EMAIL} | ${process.env.RESTAURANT_PHONE}`);
