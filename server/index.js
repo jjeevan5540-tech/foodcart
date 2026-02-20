@@ -1,5 +1,5 @@
 import express from 'express';
-import { Resend } from 'resend';
+import nodemailer from 'nodemailer';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import https from 'https';
@@ -41,6 +41,10 @@ app.use((req, res, next) => {
   next();
 });
 
+// ─── Serve Frontend (Production / Single-Port Mode) ──────────────────────────
+const distPath = join(__dirname, '../dist');
+app.use(express.static(distPath));
+
 const PORT = process.env.PORT || 5002;
 
 // Initialize Razorpay
@@ -49,53 +53,71 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET || 'placeholder_secret',
 });
 
-// ─── Email Provider Setup (Auto-selects Resend or SendGrid, with dev fallback) ─
-const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
-const FROM_EMAIL = process.env.FROM_EMAIL || 'onboarding@resend.dev';
+// ─── SMTP Email Setup (Nodemailer) ───────────────────────────────────────────
+const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
+const SMTP_PORT = parseInt(process.env.SMTP_PORT || '465');
+const SMTP_SECURE = process.env.SMTP_SECURE !== 'false'; // true for 465, false for 587
+const SMTP_USER = process.env.SMTP_USER || '';
+const SMTP_PASS = process.env.SMTP_PASS || '';
+const FROM_EMAIL = process.env.FROM_EMAIL || SMTP_USER;
+const FROM_NAME = process.env.FROM_NAME || 'FoodKart';
 
-// Detect if keys are still placeholder values
-const isResendReal = RESEND_API_KEY && !RESEND_API_KEY.includes('placeholder') && !RESEND_API_KEY.includes('YOUR_');
-const isSendGridReal = SENDGRID_API_KEY && !SENDGRID_API_KEY.includes('placeholder') && !SENDGRID_API_KEY.includes('YOUR_');
+const isSmtpConfigured = SMTP_USER && SMTP_PASS
+  && !SMTP_USER.includes('your_') && !SMTP_PASS.includes('your_');
 
-let resendClient = null;
+let transporter = null;
 
-if (isResendReal) {
-  resendClient = new Resend(RESEND_API_KEY);
-  console.log('✅ Email provider: Resend (key configured)');
+if (isSmtpConfigured) {
+  transporter = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_SECURE,
+    auth: { user: SMTP_USER, pass: SMTP_PASS },
+    tls: { rejectUnauthorized: false },
+  });
+
+  // Verify connection on startup
+  transporter.verify((err, ok) => {
+    if (err) {
+      console.error('❌ SMTP connection failed:', err.message);
+      console.error('   → Check SMTP_USER / SMTP_PASS in server/.env');
+    } else {
+      console.log(`✅ Email provider: SMTP (${SMTP_HOST}:${SMTP_PORT}) — ready to send!`);
+    }
+  });
 } else {
-  console.warn('⚠️  No real Resend API key found — running in DEV mode (emails logged to console).');
-  console.warn('   → Add RESEND_API_KEY to server/.env to send real emails');
-  console.warn('   → Get a FREE key at: https://resend.com/signup');
+  console.warn('⚠️  SMTP not configured — emails will be logged to console only.');
+  console.warn('   → Add SMTP_USER and SMTP_PASS to server/.env');
+  console.warn('   → For Gmail: use your Gmail address + an App Password');
+  console.warn('      Guide: https://myaccount.google.com/apppasswords');
 }
 
-// ─── Helper: Send Email (Resend → SendGrid → Dev-console fallback) ────────────
+// ─── Helper: Send Email via SMTP ─────────────────────────────────────────────
 const sendEmail = async ({ to, subject, html, text }) => {
-  if (resendClient) {
-    // ── Resend ──
-    console.log(`📡 Sending email via Resend to ${to}...`);
-    const { data, error } = await resendClient.emails.send({
-      from: FROM_EMAIL,
-      to,
-      subject,
-      html: html || '',
-      text: text || '',
-    });
-    if (error) {
-      console.error(`❌ Resend Error:`, error);
-      throw new Error(error.message || JSON.stringify(error));
+  if (transporter) {
+    console.log(`📡 Sending email via SMTP to ${to}...`);
+    try {
+      const info = await transporter.sendMail({
+        from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+        to,
+        subject,
+        html: html || '',
+        text: text || '',
+      });
+      console.log(`✅ Email sent to ${to} — MessageId: ${info.messageId}`);
+      return info;
+    } catch (error) {
+      console.error(`❌ SMTP Error sending to ${to}:`, error);
+      throw error; // Re-throw to handle in route
     }
-    console.log(`✅ Email sent via Resend to ${to} — ID: ${data.id}`);
-    return data;
   } else {
-    // ── Dev console fallback (no real key) ──
+    // Dev-console fallback
     console.log('\n📧 [DEV MODE] Email would have been sent:');
-    console.log(`   From   : ${FROM_EMAIL}`);
+    console.log(`   From   : "${FROM_NAME}" <${FROM_EMAIL}>`);
     console.log(`   To     : ${to}`);
     console.log(`   Subject: ${subject}`);
-    console.log('   (Configure RESEND_API_KEY in server/.env to send real emails)\n');
-    // Return a fake response so callers don't crash
-    return { id: 'dev-mode-' + Date.now(), dev: true };
+    console.log('   → Add SMTP_USER + SMTP_PASS to server/.env to send real emails\n');
+    return { messageId: 'dev-' + Date.now(), dev: true };
   }
 };
 
@@ -415,33 +437,37 @@ app.post('/api/report-issue', async (req, res) => {
 });
 
 // ─── Route: Test Email Connection ──────────────────────────────────────────
+// ─── Route: Test Email Connection ──────────────────────────────────────────
 app.get('/api/test-email', async (req, res) => {
   const testEmail = req.query.email || FROM_EMAIL;
-  const provider = resendClient ? 'Resend' : isSendGridReal ? 'SendGrid' : 'Dev-Console (no real key)';
   try {
-    console.log(`🧪 Testing email connection [${provider}] for ${testEmail}...`);
-    const result = await sendEmail({
+    console.log(`🧪 Testing email connection [SMTP] for ${testEmail}...`);
+
+    if (!transporter) {
+      throw new Error('SMTP transporter is not configured (check server/.env)');
+    }
+
+    const info = await sendEmail({
       to: testEmail,
       subject: '🧪 FoodKart: Email Test Successful',
-      html: `<h1>FoodKart Email is working! ✅</h1><p>Provider: <strong>${provider}</strong></p><p>FROM: ${FROM_EMAIL}</p>`
+      html: `<h1>FoodKart Email is working! ✅</h1><p>Provider: <strong>SMTP</strong></p><p>FROM: ${FROM_EMAIL}</p>`
     });
+
     res.status(200).json({
       success: true,
-      provider,
+      provider: 'SMTP',
       from: FROM_EMAIL,
       to: testEmail,
-      devMode: !resendClient && !isSendGridReal,
-      message: resendClient || isSendGridReal
-        ? `Test email sent via ${provider} successfully!`
-        : 'DEV MODE: No real API key. Email logged to console. Add RESEND_API_KEY to server/.env to send real emails.'
+      messageId: info.messageId,
+      message: 'Test email sent successfully via SMTP!'
     });
   } catch (error) {
-    console.error('❌ Email Test Failed:', error?.response?.body || error.message);
+    console.error('❌ Email Test Failed:', error.message);
     res.status(500).json({
       success: false,
-      provider,
-      error: `Email failed via ${provider}. Check your API key and FROM_EMAIL in server/.env`,
-      details: error?.response?.body || error.message
+      error: 'Email failed via SMTP.',
+      details: error.message,
+      hint: 'Check SMTP_PASS in server/.env and ensure 2-Step Verification is ON.'
     });
   }
 });
@@ -451,11 +477,16 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// ─── SPA Catch-All Route (Must be last) ──────────────────────────────────────
+app.get('*', (req, res) => {
+  res.sendFile(join(distPath, 'index.html'));
+});
+
 app.listen(PORT, () => {
-  const provider = resendClient ? 'Resend ✅' : isSendGridReal ? 'SendGrid ✅' : '⚠️  DEV MODE (no real key)';
+  const provider = isSmtpConfigured ? `SMTP (${SMTP_HOST}:${SMTP_PORT}) ✅` : '⚠️  DEV MODE (SMTP not configured)';
   console.log(`\n🚀 FoodKart Notification Server running at http://localhost:${PORT}`);
   console.log(`📧 Email Provider : ${provider}`);
-  console.log(`📧 From Address   : ${FROM_EMAIL}`);
+  console.log(`📧 From Address   : "${FROM_NAME}" <${FROM_EMAIL}>`);
   console.log(`🍽️  Restaurant     : ${process.env.RESTAURANT_EMAIL} | ${process.env.RESTAURANT_PHONE}`);
   console.log(`📱 WhatsApp       : ${process.env.CALLMEBOT_API_KEY !== 'placeholder_key' ? 'Configured ✅' : 'Not configured'}`);
   console.log(`\n👉 Test health    : http://localhost:${PORT}/api/health`);
