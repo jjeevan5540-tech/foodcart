@@ -1,4 +1,12 @@
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import https from 'https';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
+import Razorpay from 'razorpay';
 
 // Load .env from server/ directory regardless of where node is run from
 const __filename = fileURLToPath(import.meta.url);
@@ -47,7 +55,11 @@ const razorpay = new Razorpay({
 
 // ─── Email Setup (Resend + Nodemailer Fallback) ──────────────────────────────
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
-const resend = (RESEND_API_KEY && !RESEND_API_KEY.includes('placeholder')) ? new Resend(RESEND_API_KEY) : null;
+const EMAIL_PROVIDER = (process.env.EMAIL_PROVIDER || 'auto').toLowerCase();
+
+// Initialize Resend if key exists and provider isn't forced to SMTP
+const resend = (RESEND_API_KEY && !RESEND_API_KEY.includes('placeholder') && EMAIL_PROVIDER !== 'smtp')
+  ? new Resend(RESEND_API_KEY) : null;
 
 const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
 const SMTP_PORT = parseInt(process.env.SMTP_PORT || '465');
@@ -62,9 +74,7 @@ const isSmtpConfigured = SMTP_USER && SMTP_PASS
 
 let transporter = null;
 
-if (resend) {
-  console.log('✅ Email provider: Resend (API) — ready to send!');
-} else if (isSmtpConfigured) {
+if (isSmtpConfigured) {
   transporter = nodemailer.createTransport({
     host: SMTP_HOST,
     port: SMTP_PORT,
@@ -77,22 +87,30 @@ if (resend) {
     if (err) {
       console.error('❌ SMTP connection failed:', err.message);
     } else {
-      console.log(`✅ Email provider: SMTP (${SMTP_HOST}:${SMTP_PORT}) — ready to send!`);
+      console.log(`✅ SMTP Provider (${SMTP_HOST}:${SMTP_PORT}) — ready!`);
     }
   });
+}
+
+if (resend) {
+  console.log('✅ Email provider: Resend (API) — active!');
+} else if (transporter) {
+  console.log('✅ Email provider: SMTP — active!');
 } else {
   console.warn('⚠️  No email provider configured (Resend or SMTP) — emails will be logged to console.');
 }
+
 
 // ─── Helper: Send Email ──────────────────────────────────────────────────────
 const sendEmail = async ({ to, subject, html, text }) => {
   const from = `"${FROM_NAME}" <${FROM_EMAIL}>`;
 
+
+  // Try Resend first (if active)
   if (resend) {
     console.log(`📡 Sending email via Resend to ${to}...`);
     try {
       // If using Resend without a verified domain, we MUST use onboarding@resend.dev
-      // We'll try to use the configured from address, but fallback if it's a common personal email
       const isPersonalEmail = FROM_EMAIL.includes('gmail.com') || FROM_EMAIL.includes('yahoo.com');
       const finalFrom = isPersonalEmail ? 'onboarding@resend.dev' : from;
 
@@ -108,9 +126,16 @@ const sendEmail = async ({ to, subject, html, text }) => {
       return data;
     } catch (error) {
       console.error('❌ Resend Error:', error.message);
-      throw error;
+      if (transporter) {
+        console.log('🔄 Falling back to SMTP...');
+      } else {
+        throw error;
+      }
     }
-  } else if (transporter) {
+  }
+
+  // Fallback to SMTP (if configured)
+  if (transporter) {
     console.log(`📡 Sending email via SMTP to ${to}...`);
     try {
       const info = await transporter.sendMail({ from, to, subject, html, text });
@@ -120,11 +145,12 @@ const sendEmail = async ({ to, subject, html, text }) => {
       console.error('❌ SMTP Error:', error.message);
       throw error;
     }
-  } else {
-    console.log('\n📧 [DEV MODE] Email log:');
-    console.log(`   To: ${to} | Subject: ${subject}\n`);
-    return { id: 'dev-' + Date.now(), dev: true };
   }
+
+  // Final fallback: Log to console
+  console.log('\n📧 [DEV MODE] Email log:');
+  console.log(`   To: ${to} | Subject: ${subject}\n`);
+  return { id: 'dev-' + Date.now(), dev: true };
 };
 
 // ─── Helper: Send WhatsApp via CallMeBot ─────────────────────────────────────
@@ -446,37 +472,42 @@ app.post('/api/report-issue', async (req, res) => {
 // ─── Route: Test Email Connection ──────────────────────────────────────────
 app.get('/api/test-email', async (req, res) => {
   const testEmail = req.query.email || FROM_EMAIL;
-  try {
-    console.log(`🧪 Testing email connection [SMTP] for ${testEmail}...`);
+  const provider = resend ? 'Resend' : (transporter ? 'SMTP' : 'Console/Log');
 
-    if (!transporter) {
-      throw new Error('SMTP transporter is not configured (check server/.env)');
-    }
+  try {
+    console.log(`🧪 Testing email connection [${provider}] for ${testEmail}...`);
 
     const info = await sendEmail({
       to: testEmail,
-      subject: '🧪 FoodCart: Email Test Successful',
-      html: `<h1>FoodCart Email is working! ✅</h1><p>Provider: <strong>SMTP</strong></p><p>FROM: ${FROM_EMAIL}</p>`
+      subject: `🧪 FoodCart: Email Test Successful (${provider})`,
+      html: `<h1>FoodCart Email is working! ✅</h1>
+             <p>Provider: <strong>${provider}</strong></p>
+             <p>From: <strong>${FROM_NAME} <${FROM_EMAIL}></strong></p>
+             <p>To: <strong>${testEmail}</strong></p>
+             <hr/>
+             <p><small>Sent at: ${new Date().toLocaleString()}</small></p>`
     });
 
     res.status(200).json({
       success: true,
-      provider: 'SMTP',
+      provider,
       from: FROM_EMAIL,
       to: testEmail,
-      messageId: info.messageId,
-      message: 'Test email sent successfully via SMTP!'
+      messageId: info.id || info.messageId,
+      message: `Test email sent successfully via ${provider}!`
     });
   } catch (error) {
-    console.error('❌ Email Test Failed:', error.message);
+    console.error(`❌ Email Test Failed (${provider}):`, error.message);
     res.status(500).json({
       success: false,
-      error: 'Email failed via SMTP.',
+      provider,
+      error: `Email failed via ${provider}.`,
       details: error.message,
-      hint: 'Check SMTP_PASS in server/.env and ensure 2-Step Verification is ON.'
+      hint: provider === 'SMTP' ? 'Check SMTP_PASS and ensure 2-Step Verification is ON.' : 'Check your API key and verified domains.'
     });
   }
 });
+
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
