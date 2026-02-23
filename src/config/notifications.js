@@ -1,6 +1,7 @@
 // Backend server base URL
 // In production, set VITE_BACKEND_URL in your Railway frontend environment variables
-export const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '';
+const rawUrl = import.meta.env.VITE_BACKEND_URL || '';
+export const BACKEND_URL = rawUrl === '/' ? '' : rawUrl.replace(/\/$/, '');
 
 export const NOTIFICATION_CONFIG = {
     ownerEmail: 'jjeevan5540@gmail.com',
