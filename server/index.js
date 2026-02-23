@@ -92,28 +92,36 @@ if (isSmtpConfigured) {
   });
 }
 
+// ─── Initialization Summary ───
+console.log('--- Email Config Audit ---');
+console.log(`EMAIL_PROVIDER: ${EMAIL_PROVIDER}`);
+console.log(`RESEND_KEY: ${RESEND_API_KEY ? 'Present (Hidden)' : 'MISSING'}`);
+console.log(`SMTP_CONFIG: ${isSmtpConfigured ? 'Valid' : 'INCOMPLETE (Check SMTP_USER/PASS)'}`);
+console.log(`FROM_EMAIL: ${FROM_EMAIL}`);
+console.log('--------------------------');
+
 if (resend) {
-  console.log('✅ Email provider: Resend (API) — active!');
+  console.log('✅ Status: Resend (API) — ACTIVE');
 } else if (transporter) {
-  console.log('✅ Email provider: SMTP — active!');
+  console.log('✅ Status: SMTP — ACTIVE');
 } else {
-  console.warn('⚠️  No email provider configured (Resend or SMTP) — emails will be logged to console.');
+  console.warn('⚠️  Status: NO PROVIDER (Emails will ONLY be logged to console)');
 }
 
 
 // ─── Helper: Send Email ──────────────────────────────────────────────────────
 const sendEmail = async ({ to, subject, html, text }) => {
   const from = `"${FROM_NAME}" <${FROM_EMAIL}>`;
-
+  console.log(`\n📨 Attempting to send email to: ${to}`);
+  console.log(`   Subject: ${subject}`);
 
   // Try Resend first (if active)
   if (resend) {
-    console.log(`📡 Sending email via Resend to ${to}...`);
-    try {
-      // If using Resend without a verified domain, we MUST use onboarding@resend.dev
-      const isPersonalEmail = FROM_EMAIL.includes('gmail.com') || FROM_EMAIL.includes('yahoo.com');
-      const finalFrom = isPersonalEmail ? 'onboarding@resend.dev' : from;
+    const isPersonalEmail = FROM_EMAIL.includes('gmail.com') || FROM_EMAIL.includes('yahoo.com');
+    const finalFrom = isPersonalEmail ? 'onboarding@resend.dev' : from;
 
+    console.log(`📡 Process: Using Resend (From: ${finalFrom})...`);
+    try {
       const { data, error } = await resend.emails.send({
         from: finalFrom,
         to,
@@ -121,14 +129,18 @@ const sendEmail = async ({ to, subject, html, text }) => {
         html: html || '',
         text: text || '',
       });
-      if (error) throw error;
-      console.log(`✅ Email sent via Resend — ID: ${data.id}`);
+      if (error) {
+        console.warn(`⚠️  Resend API returned error: ${error.message || JSON.stringify(error)}`);
+        throw error;
+      };
+      console.log(`✅ SUCCESS: Sent via Resend (ID: ${data.id})`);
       return data;
     } catch (error) {
-      console.error('❌ Resend Error:', error.message);
+      console.error('❌ Resend Exception:', error.message);
       if (transporter) {
-        console.log('🔄 Falling back to SMTP...');
+        console.log('🔄 PROCESS: Falling back to SMTP...');
       } else {
+        console.warn('🚨 FATAL: Resend failed and no SMTP fallback available.');
         throw error;
       }
     }
@@ -136,19 +148,19 @@ const sendEmail = async ({ to, subject, html, text }) => {
 
   // Fallback to SMTP (if configured)
   if (transporter) {
-    console.log(`📡 Sending email via SMTP to ${to}...`);
+    console.log(`📡 Process: Using SMTP (User: ${SMTP_USER})...`);
     try {
       const info = await transporter.sendMail({ from, to, subject, html, text });
-      console.log(`✅ Email sent via SMTP — MessageId: ${info.messageId}`);
+      console.log(`✅ SUCCESS: Sent via SMTP (ID: ${info.messageId})`);
       return info;
     } catch (error) {
-      console.error('❌ SMTP Error:', error.message);
+      console.error('❌ SMTP Exception:', error.message);
       throw error;
     }
   }
 
   // Final fallback: Log to console
-  console.log('\n📧 [DEV MODE] Email log:');
+  console.log('\n📧 [LOCAL/DEV MODE] Email log content:');
   console.log(`   To: ${to} | Subject: ${subject}\n`);
   return { id: 'dev-' + Date.now(), dev: true };
 };
