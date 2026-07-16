@@ -46,3 +46,4 @@ nul
 !package-lock.json
 !firebase.json
 !tsconfig.json
+!vercel.json
